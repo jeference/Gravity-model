@@ -1,0 +1,111 @@
+#Importing libraries
+
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+from scipy.optimize import curve_fit
+import math
+import scipy.signal
+import csv
+import seaborn as sns
+
+class Gravity_model():
+    
+    
+    def __init__(self,dist,pop_from,pop_to,flow,bin_by_max = None):
+        #Assigns variables
+        self.dist = dist
+        self.pop_from = pop_from
+        self.pop_to = pop_to
+        self.flow = flow
+        self.bin_by_max = bin_by_max
+        
+        
+    def model(self,idp_var,k,sigma):
+        #Creates the model that will be used by scipy.optimize
+        distance,population_from,population_to = idp_var 
+        return (k*population_from*population_to)/(distance**sigma)
+     
+    
+    def optimize(self):
+        ''' Optimizes K and Sigma parameters. If bin_by_max values is passed, it optimizes using only max flows
+        for each distance interval
+        '''
+        if self.bin_by_max != None:
+            
+            
+            def bin_by_max_flows(nbins):
+                df = pd.DataFrame({'pop_from': self.pop_from, 'pop_to':self.pop_to,'distance':self.dist, 'flow':self.flow})
+                df['dist_bins'] = pd.cut(df['distance'], nbins, right=True)
+                df['dist_bins'] = df['dist_bins'].apply(lambda x: str(x).split(',')[1][:-1])
+                max_flow_list, max_dist_list,max_pop_from_list,max_pop_to_list = [],[],[],[]
+                for group,df in df.groupby('dist_bins'):
+                    idx_maxflow = df['flow'].idxmax()
+                    max_flow_list.append(df.loc[idx_maxflow, 'flow'])
+                    max_dist_list.append(df.loc[idx_maxflow, 'distance'])
+                    max_pop_from_list.append(df.loc[idx_maxflow, 'pop_from'])
+                    max_pop_to_list.append(df.loc[idx_maxflow, 'pop_to'])
+                return max_flow_list,max_dist_list,max_pop_from_list,max_pop_to_list
+                    
+     
+            self.flow,self.dist,self.pop_from,self.pop_to = bin_by_max_flows(self.bin_by_max)
+            #Optimizes the model using scipy.optimize   
+            param,cov = curve_fit(self.model,(self.dist,self.pop_from,self.pop_to),self.flow)
+            self.k,self.sigma = param
+            self.model_flow = [self.k*pop_from*pop_to/dist**self.sigma for (dist,pop_from,pop_to) in list(zip(self.dist,self.pop_from,self.pop_to)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1]
+            self.flow = np.array([flow for (dist,pop_from,pop_to,flow) in list(zip(self.dist,self.pop_from,self.pop_to,self.flow)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1])
+            temporary_dist = np.array([dist for (dist,pop_from,pop_to) in list(zip(self.dist,self.pop_from,self.pop_to)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1])
+            temporary_popfrom = np.array([pop_from for (dist,pop_from,pop_to) in list(zip(self.dist,self.pop_from,self.pop_to)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1])
+            temporary_popto = np.array([pop_to for (dist,pop_from,pop_to) in list(zip(self.dist,self.pop_from,self.pop_to)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1])
+            self.dist = temporary_dist
+            self.pop_from = temporary_popfrom
+            self.pop_to = temporary_popto
+            return param
+        else:
+            #Optimizes the model using scipy.optimize
+            param,cov = curve_fit(self.model,(self.dist,self.pop_from,self.pop_to),self.flow)
+            self.k,self.sigma = param
+            self.model_flow = [self.k*pop_from*pop_to/dist**self.sigma for (dist,pop_from,pop_to) in list(zip(self.dist,self.pop_from,self.pop_to)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1]
+            self.flow = np.array([flow for (dist,pop_from,pop_to,flow) in list(zip(self.dist,self.pop_from,self.pop_to,self.flow)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1])
+            temporary_dist = np.array([dist for (dist,pop_from,pop_to) in list(zip(self.dist,self.pop_from,self.pop_to)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1])
+            temporary_popfrom = np.array([pop_from for (dist,pop_from,pop_to) in list(zip(self.dist,self.pop_from,self.pop_to)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1])
+            temporary_popto = np.array([pop_to for (dist,pop_from,pop_to) in list(zip(self.dist,self.pop_from,self.pop_to)) if (self.k*pop_from*pop_to/dist**self.sigma)>=1])
+            self.dist = temporary_dist
+            self.pop_from = temporary_popfrom
+            self.pop_to = temporary_popto
+         
+
+            return param
+    
+    
+    def scatter_plot(self, name='scatter plot'):
+        #Creates the scatter plot of real data X predicted data
+        fig = plt.figure(figsize=(8.0,5.0))
+        ax1 = fig.add_subplot(111)
+        #plt.xscale('log')
+        #plt.yscale('log')
+        ax1.scatter(self.dist,self.flow, c='r',s=3, label='real flow')
+        ax1.scatter(self.dist,self.model_flow,c='b',s=3, label='predicted flow')
+        plt.title(name)
+        plt.legend(loc='upper right')
+        plt.xlabel('Distance')
+        plt.ylabel('Flow')
+        if self.bin_by_max!=None:
+            plt.savefig('figures/scatters/max_flows/'+name+'.png')
+        else:   
+            plt.savefig('figures/scatters/'+name+'.png')
+        plt.show()
+    
+    
+    def boxplot(self,nbins):
+       
+        df = pd.DataFrame({'pop_from': self.pop_from, 'pop_to':self.pop_to,'distance':self.dist, 'flow':self.flow})
+        df['dist_bins'] = pd.cut(df['distance'], nbins, right=True)
+        df['dist_bins'] = df['dist_bins'].apply(lambda x: str(x).split(',')[1][:-1])
+        ax = sns.boxplot(x = 'dist_bins',y='flow', data=df)
+        ax.figure.set_size_inches(12,8)
+        plt.xticks(rotation=90)
+        plt.xlabel('Distance')
+        plt.ylabel('Flow')
+
+
