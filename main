@@ -7,9 +7,7 @@ from scipy.optimize import curve_fit
 import math
 #import cv2 #Open CV
 import scipy.signal
-import matplotlib.image as mpimg
 import csv
-import seaborn as sns
 from decimal import Decimal
 
 class Gravity():
